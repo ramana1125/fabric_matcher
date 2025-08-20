@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fabric Image Matcher</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+        }
+        .image-preview {
+            max-width: 200px;
+            max-height: 200px;
+            object-fit: cover;
+            margin: 10px;
+        }
+        .result-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 10px 0;
+            background-color: #f9fafb;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-6">
+        <h1 class="text-4xl font-bold text-center text-gray-800 mb-8">Fabric Image Matcher</h1>
+
+        <!-- API Status Section -->
+        <div class="bg-white shadow-md rounded-lg p-6 mb-8">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">API Status</h2>
+            <p id="apiStatus" class="text-gray-600">Checking API status...</p>
+        </div>
+
+        <!-- Upload Section -->
+        <div class="bg-white shadow-md rounded-lg p-6 mb-8">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Upload a New Fabric Image</h2>
+            <div class="flex items-center space-x-4">
+                <input type="file" id="uploadFile" accept="image/jpeg,image/png" class="border p-2 rounded">
+                <button onclick="uploadImage()" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded">
+                    Upload
+                </button>
+            </div>
+            <pre id="uploadResult" class="mt-4 text-gray-600"></pre>
+        </div>
+
+        <!-- Match Section -->
+        <div class="bg-white shadow-md rounded-lg p-6">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Match a Fabric Image</h2>
+            <div class="flex items-center space-x-4 mb-4">
+                <input type="file" id="matchFile" accept="image/jpeg,image/png" class="border p-2 rounded">
+                <button onclick="matchImage()" class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded">
+                    Match
+                </button>
+            </div>
+            <div id="matchResult" class="mt-4">
+                <!-- Results will be dynamically inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Check API status on page load
+        async function checkApiStatus() {
+            const statusP = document.getElementById('apiStatus');
+            try {
+                const response = await fetch('/api/');
+                const result = await response.json();
+                if (response.ok) {
+                    statusP.textContent = `${result.message} (Status: ${result.status})`;
+                    statusP.classList.add('text-green-600');
+                } else {
+                    statusP.textContent = 'API is not running.';
+                    statusP.classList.add('text-red-500');
+                }
+            } catch (error) {
+                statusP.textContent = `Error: ${error.message}`;
+                statusP.classList.add('text-red-500');
+            }
+        }
+
+        window.onload = checkApiStatus;
+
+        async function uploadImage() {
+            const fileInput = document.getElementById('uploadFile');
+            const resultDiv = document.getElementById('uploadResult');
+            resultDiv.textContent = 'Uploading...';
+
+            if (!fileInput.files[0]) {
+                resultDiv.textContent = 'Please select an image file.';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    resultDiv.textContent = `Success: ${result.message}\nImage Path: ${result.image_path}`;
+                } else {
+                    resultDiv.textContent = `Error: ${result.error}`;
+                }
+            } catch (error) {
+                resultDiv.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function matchImage() {
+            const fileInput = document.getElementById('matchFile');
+            const resultDiv = document.getElementById('matchResult');
+            resultDiv.innerHTML = '<p class="text-gray-600">Matching...</p>';
+
+            if (!fileInput.files[0]) {
+                resultDiv.innerHTML = '<p class="text-red-500">Please select an image file.</p>';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                const response = await fetch('/api/match', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (!response.ok) {
+                    resultDiv.innerHTML = `<p class="text-red-500">Error: ${result.error}</p>`;
+                    return;
+                }
+
+                // Handle the response format
+                const matches = result.matches;
+                if (matches.length === 0) {
+                    resultDiv.innerHTML = '<p class="text-gray-600">No matches found.</p>';
+                    return;
+                }
+
+                // Check for exact match (similarity > 95%)
+                const topMatch = matches[0];
+                const percentage = (topMatch.similarity * 100).toFixed(1);
+                if (topMatch.similarity > 0.95) {
+                    resultDiv.innerHTML = `
+                        <div class="result-card">
+                            <h3 class="text-lg font-semibold text-gray-700">Exact Match Found</h3>
+                            <img src="${topMatch.image_path}" alt="Exact Match" class="image-preview">
+                            <p class="text-gray-600">Similarity: ${percentage}%</p>
+                            <p class="text-gray-600">Path: ${topMatch.image_path}</p>
+                        </div>
+                    `;
+                } else {
+                    let html = '<h3 class="text-lg font-semibold text-gray-700">Top 5 Similar Matches</h3>';
+                    matches.slice(0, 5).forEach(match => {
+                        const percentage = (match.similarity * 100).toFixed(1);
+                        html += `
+                            <div class="result-card flex items-center">
+                                <img src="${match.image_path}" alt="Similar Match" class="image-preview">
+                                <div>
+                                    <p class="text-gray-600">Similarity: ${percentage}%</p>
+                                    <p class="text-gray-600">Path: ${match.image_path}</p>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    resultDiv.innerHTML = html;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="text-red-500">Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
